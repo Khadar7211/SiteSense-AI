@@ -51,7 +51,7 @@ import {
 import { buildRollupTree } from "@/lib/hierarchy-rollup";
 import { parseRevaCsv, parseRevaXlsx } from "@/lib/reva-parser";
 import { cn } from "@/lib/utils";
-import type { ParsedTask, RevaParseResult } from "@/types/progress";
+import type { ParsedTask, RevaParseResult, RevaParsedRow } from "@/types/progress";
 
 type Project = { id: string; name: string; created_at?: string };
 
@@ -188,13 +188,19 @@ export function ConstructionMisApp() {
   );
 
   const saveProjectState = useCallback(
-    async (projectId: string, leavesToSave: ParsedTask[], sourceFilename?: string) => {
+    async (
+      projectId: string,
+      rowsToSave: RevaParsedRow[],
+      leavesToSave: ParsedTask[],
+      sourceFilename?: string
+    ) => {
       try {
         await fetch("/api/project-state", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             projectId,
+            rows: rowsToSave,
             leaves: leavesToSave,
             sourceFilename: sourceFilename ?? null,
           }),
@@ -279,7 +285,12 @@ export function ConstructionMisApp() {
         setNewTaskIds(detectedNew);
         setPhase(detectedNew.size > 0 ? "mapping" : "dashboard");
 
-        void saveProjectState(existingProject.id, parsed.leaves, sourceFilename);
+        void saveProjectState(
+          existingProject.id,
+          parsed.rows,
+          parsed.leaves,
+          sourceFilename
+        );
         if (detectedNew.size === 0) {
           const metrics = buildTaskMetrics(parsed.leaves, nextLeafWeights);
           const overall = overallCompletionPercent(metrics);
@@ -398,6 +409,7 @@ export function ConstructionMisApp() {
       await recordProgressLog(project.id, tot, sessionParse.leaves.length);
       await saveProjectState(
         project.id,
+        sessionParse.rows,
         sessionParse.leaves,
         latestSourceFilename ?? undefined
       );
@@ -428,7 +440,11 @@ export function ConstructionMisApp() {
       const weightJson = await weightRes.json();
 
       const state = stateJson.state as
-        | { source_filename: string | null; leaves_json: ParsedTask[] }
+        | {
+            source_filename: string | null;
+            leaves_json: ParsedTask[];
+            rows_json?: RevaParsedRow[] | null;
+          }
         | null;
       const leavesFromDb = Array.isArray(state?.leaves_json) ? state.leaves_json : [];
 
@@ -440,7 +456,7 @@ export function ConstructionMisApp() {
 
       const parsed: RevaParseResult = {
         projectName: p.name,
-        rows: [],
+        rows: Array.isArray(state?.rows_json) ? state.rows_json : [],
         leaves: leavesFromDb,
         errors: [],
       };
