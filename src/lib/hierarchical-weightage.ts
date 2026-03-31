@@ -104,6 +104,30 @@ export function buildWeightTree(rows: RevaParsedRow[], leaves: ParsedTask[]): We
     rootIds.push(node.id);
   }
 
+  // If hierarchy still has no parent nodes (all roots are leaves),
+  // create one synthetic L1 parent so mapping stays parent-first.
+  const hasParent = Object.values(nodes).some((n) => n.nodeKind === "parent");
+  if (!hasParent) {
+    const rootParentId = "p:synthetic:all-tasks";
+    nodes[rootParentId] = {
+      id: rootParentId,
+      taskId: rootParentId,
+      label: "All Tasks",
+      nodeKind: "parent",
+      level: 1,
+      parentId: null,
+      children: [],
+    };
+    for (const rid of [...rootIds]) {
+      const n = nodes[rid];
+      if (!n || n.nodeKind !== "leaf") continue;
+      n.parentId = rootParentId;
+      nodes[rootParentId].children.push(n.id);
+    }
+    rootIds.length = 0;
+    rootIds.push(rootParentId);
+  }
+
   const level1ParentIds = rootIds.filter((id) => nodes[id]?.nodeKind === "parent");
   const leafIds = Object.values(nodes)
     .filter((n) => n.nodeKind === "leaf")

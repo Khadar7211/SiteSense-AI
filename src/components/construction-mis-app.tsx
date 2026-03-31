@@ -51,7 +51,6 @@ import {
 import { buildRollupTree } from "@/lib/hierarchy-rollup";
 import { parseRevaCsv, parseRevaXlsx } from "@/lib/reva-parser";
 import { cn } from "@/lib/utils";
-import { equalWeightage } from "@/lib/weightage-init";
 import type { ParsedTask, RevaParseResult } from "@/types/progress";
 
 type Project = { id: string; name: string; created_at?: string };
@@ -253,7 +252,9 @@ export function ConstructionMisApp() {
         if (!existingProject) {
           setActiveProject(null);
           setIsNewProject(true);
-          setLeafWeightage(equalWeightage(parsed.leaves));
+          setLeafWeightage(
+            Object.fromEntries(parsed.leaves.map((l) => [l.id, 0]))
+          );
           setNewTaskIds(new Set(parsed.leaves.map((l) => l.taskId)));
           setPhase("mapping");
           return;

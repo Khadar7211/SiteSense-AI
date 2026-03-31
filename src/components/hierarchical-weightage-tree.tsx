@@ -1,16 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import {
-  type WeightTree,
-  immediateChildrenSum,
-  parentWeight,
-} from "@/lib/hierarchical-weightage";
+import { type WeightTree, parentWeight } from "@/lib/hierarchical-weightage";
 import { cn, toDomId } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 type Props = {
   tree: WeightTree;
@@ -33,10 +37,10 @@ export function HierarchicalWeightageTree({
     () => new Set(tree.level1ParentIds.length ? tree.level1ParentIds : tree.rootIds),
     [tree.level1ParentIds, tree.rootIds]
   );
-  const [open, setOpen] = useState<Set<string>>(defaultOpen);
+  const [openParents, setOpenParents] = useState<Set<string>>(defaultOpen);
 
   const toggle = (id: string) => {
-    setOpen((prev) => {
+    setOpenParents((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -44,84 +48,132 @@ export function HierarchicalWeightageTree({
     });
   };
 
-  const renderNode = (id: string, depth: number) => {
-    const node = tree.nodes[id];
-    if (!node) return null;
+  const renderRows = (nodeId: string, depth: number) => {
+    const node = tree.nodes[nodeId];
+    if (!node) return [];
 
     if (node.nodeKind === "leaf") {
       const v = leafWeights[node.id] ?? 0;
       const isNew = highlightedTaskIds?.has(node.taskId) ?? false;
-      return (
-        <div
-          key={id}
-          className={cn(
-            "grid grid-cols-[1fr,140px] items-center gap-3 rounded-md border px-2 py-2",
-            isNew && "border-amber-300 bg-amber-50/70"
-          )}
-          style={{ marginLeft: depth * 18 }}
+      return [
+        <TableRow
+          key={`leaf:${node.id}`}
+          className={cn("bg-muted/30", isNew && "bg-amber-50/70")}
         >
-          <div className="min-w-0">
-            <p className="truncate text-sm">{node.label}</p>
-            <p className="text-xs text-muted-foreground">Leaf</p>
+          <TableCell />
+          <TableCell className="font-mono text-xs text-muted-foreground">
+            {node.taskId}
+          </TableCell>
+          <TableCell>
+            <div
+              className="text-sm text-muted-foreground"
+              style={{ paddingLeft: Math.max(0, depth * 14) }}
+            >
+              {node.label}
+            </div>
+          </TableCell>
+          <TableCell className="text-right">
+            <Input
+              id={toDomId(node.id, "wt")}
+              type="number"
+              step="0.01"
+              min={0}
+              className="h-8 text-right bg-muted/40"
+              value={v}
+              onChange={(e) => onLeafChange(node.id, e.target.value)}
+              readOnly
+            />
+          </TableCell>
+          <TableCell />
+        </TableRow>,
+      ];
+    }
+
+    const v = parentWeight(tree, leafWeights, node.id);
+    const isOpen = openParents.has(node.id);
+    const out = [
+      <TableRow
+        key={`parent:${node.id}`}
+        className={cn(node.level <= 1 ? "bg-blue-50/80" : "bg-slate-50/80")}
+      >
+        <TableCell>
+          <button
+            type="button"
+            className="rounded p-1 transition hover:bg-muted"
+            onClick={() => toggle(node.id)}
+            aria-label={`Toggle ${node.label} children`}
+          >
+            {isOpen ? (
+              <ChevronDown className="h-4 w-4 text-primary" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-primary" />
+            )}
+          </button>
+        </TableCell>
+        <TableCell className="font-mono text-xs text-muted-foreground">
+          {node.taskId}
+        </TableCell>
+        <TableCell>
+          <div
+            className="font-semibold text-foreground"
+            style={{ paddingLeft: Math.max(0, depth * 14) }}
+          >
+            {node.label}
           </div>
+        </TableCell>
+        <TableCell className="text-right">
           <Input
             id={toDomId(node.id, "wt")}
             type="number"
             step="0.01"
             min={0}
             className="h-8 text-right"
-            value={v}
-            onChange={(e) => onLeafChange(node.id, e.target.value)}
-          />
-        </div>
-      );
-    }
-
-    const v = parentWeight(tree, leafWeights, node.id);
-    const childrenSum = immediateChildrenSum(tree, leafWeights, node.id);
-    const mismatch = Math.abs(childrenSum - v) > 0.01;
-    const isOpen = open.has(node.id);
-
-    return (
-      <div key={id} className="space-y-2">
-        <div
-          className={cn(
-            "grid grid-cols-[1fr,140px,120px] items-center gap-3 rounded-md border px-2 py-2",
-            node.level <= 1 ? "bg-blue-50/80" : "bg-slate-50/80"
-          )}
-          style={{ marginLeft: depth * 18 }}
-        >
-          <button
-            type="button"
-            className="flex items-center gap-1 text-left"
-            onClick={() => toggle(node.id)}
-          >
-            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-            <span className="truncate font-medium">{node.label}</span>
-          </button>
-          <Input
-            id={toDomId(node.id, "wt")}
-            type="number"
-            step="0.01"
-            min={0}
-            className={cn("h-8 text-right", mismatch && "border-red-500 ring-1 ring-red-200")}
             value={Number.isFinite(v) ? Number(v.toFixed(2)) : 0}
             onChange={(e) => onParentChange(node.id, e.target.value)}
           />
-          <Button type="button" variant="outline" className="h-8" onClick={() => onDistributeEqual(node.id)}>
+        </TableCell>
+        <TableCell className="text-right">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8"
+            onClick={() => onDistributeEqual(node.id)}
+          >
             Distribute equally
           </Button>
-        </div>
-        {isOpen ? (
-          <div className="space-y-2">
-            {node.children.map((cid) => renderNode(cid, depth + 1))}
-          </div>
-        ) : null}
-      </div>
-    );
+        </TableCell>
+      </TableRow>,
+    ];
+
+    if (isOpen) {
+      for (const childId of node.children) {
+        out.push(...renderRows(childId, depth + 1));
+      }
+    }
+
+    return out;
   };
 
   if (tree.rootIds.length === 0) return null;
 
-  return <div className="space-y-2">{tree.rootIds.map((id) => renderNode(id, 0))}</div>;
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/40 hover:bg-muted/40">
+          <TableHead className="w-12" />
+          <TableHead className="w-28">Task ID</TableHead>
+          <TableHead className="min-w-[260px]">Task</TableHead>
+          <TableHead className="w-36 text-right">Weightage %</TableHead>
+          <TableHead className="w-40 text-right">Action</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {tree.rootIds.map((rootId) => (
+          <Fragment key={`root:${rootId}`}>
+            {renderRows(rootId, 0)}
+          </Fragment>
+        ))}
+      </TableBody>
+    </Table>
+  );
 }
