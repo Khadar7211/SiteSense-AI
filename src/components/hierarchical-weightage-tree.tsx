@@ -38,6 +38,7 @@ export function HierarchicalWeightageTree({
     [tree.level1ParentIds, tree.rootIds]
   );
   const [openParents, setOpenParents] = useState<Set<string>>(defaultOpen);
+  const [parentDrafts, setParentDrafts] = useState<Record<string, string>>({});
 
   const toggle = (id: string) => {
     setOpenParents((prev) => {
@@ -89,6 +90,8 @@ export function HierarchicalWeightageTree({
     }
 
     const v = parentWeight(tree, leafWeights, node.id);
+    const draft = parentDrafts[node.id];
+    const parentInputValue = draft != null ? draft : String(Number(v.toFixed(2)));
     const isOpen = openParents.has(node.id);
     const out = [
       <TableRow
@@ -127,8 +130,22 @@ export function HierarchicalWeightageTree({
             step="0.01"
             min={0}
             className="h-8 text-right"
-            value={Number.isFinite(v) ? Number(v.toFixed(2)) : 0}
-            onChange={(e) => onParentChange(node.id, e.target.value)}
+            value={parentInputValue}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setParentDrafts((prev) => ({ ...prev, [node.id]: raw }));
+              if (raw === "" || raw.endsWith(".")) return;
+              onParentChange(node.id, raw);
+            }}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              onParentChange(node.id, raw === "" ? "0" : raw);
+              setParentDrafts((prev) => {
+                const next = { ...prev };
+                delete next[node.id];
+                return next;
+              });
+            }}
           />
         </TableCell>
         <TableCell className="text-right">

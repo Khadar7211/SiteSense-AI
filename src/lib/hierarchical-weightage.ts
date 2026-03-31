@@ -34,10 +34,6 @@ function splitEqually(total: number, ids: string[]): Record<string, number> {
 
 export function buildWeightTree(rows: RevaParsedRow[], leaves: ParsedTask[]): WeightTree {
   const nodes: Record<string, WeightTreeNode> = {};
-  const maxLevel = Math.max(
-    1,
-    ...rows.map((r) => (r.level != null && r.level > 0 ? r.level : 1))
-  );
   const leafQueueByTaskId = new Map<string, ParsedTask[]>();
   for (const leaf of leaves) {
     if (!leafQueueByTaskId.has(leaf.taskId)) leafQueueByTaskId.set(leaf.taskId, []);
@@ -50,9 +46,7 @@ export function buildWeightTree(rows: RevaParsedRow[], leaves: ParsedTask[]): We
     const row = rows[i]!;
     if (!String(row.taskId ?? "").trim()) continue;
     const level = row.level != null && row.level > 0 ? row.level : 1;
-    const inferParentByLevel = level < maxLevel;
-    const nodeKind =
-      row.nodeKind === "parent" || inferParentByLevel ? "parent" : "leaf";
+    const nodeKind = row.nodeKind;
     if (nodeKind === "leaf") {
       const q = leafQueueByTaskId.get(row.taskId) ?? [];
       const leaf = q.shift();
