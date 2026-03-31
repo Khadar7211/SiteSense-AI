@@ -34,37 +34,95 @@ function splitEqually(total: number, ids: string[]): Record<string, number> {
 
 export function buildWeightTree(rows: RevaParsedRow[], leaves: ParsedTask[]): WeightTree {
   const nodes: Record<string, WeightTreeNode> = {};
-
-  for (const row of rows) {
-    if (row.nodeKind !== "parent") continue;
-    const id = `p:${row.taskId}`;
-    if (nodes[id]) continue;
-    nodes[id] = {
-      id,
-      taskId: row.taskId,
-      label: row.taskName,
-      nodeKind: "parent",
-      level: row.level ?? 1,
-      parentId: row.parentTaskId ? `p:${row.parentTaskId}` : null,
-      children: [],
-    };
-  }
-
+  const maxLevel = Math.max(
+    1,
+    ...rows.map((r) => (r.level != null && r.level > 0 ? r.level : 1))
+  );
+  const leafQueueByTaskId = new Map<string, ParsedTask[]>();
   for (const leaf of leaves) {
-    const id = leaf.id;
-    nodes[id] = {
-      id,
-      taskId: leaf.taskId,
-      label: leaf.name,
-      nodeKind: "leaf",
-      level: 0,
-      parentId: leaf.parentTaskId ? `p:${leaf.parentTaskId}` : null,
+    if (!leafQueueByTaskId.has(leaf.taskId)) leafQueueByTaskId.set(leaf.taskId, []);
+    leafQueueByTaskId.get(leaf.taskId)!.push(leaf);
+  }
+
+  const rowNodes: Array<WeightTreeNode & { rawParentTaskId: string | null; rowIdx: number }> =
+    [];
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i]!;
+    if (!String(row.taskId ?? "").trim()) continue;
+    const level = row.level != null && row.level > 0 ? row.level : 1;
+    const inferParentByLevel = level < maxLevel;
+    const nodeKind =
+      row.nodeKind === "parent" || inferParentByLevel ? "parent" : "leaf";
+    if (nodeKind === "leaf") {
+      const q = leafQueueByTaskId.get(row.taskId) ?? [];
+      const leaf = q.shift();
+      rowNodes.push({
+        id: leaf?.id ?? `l:${row.taskId}__${i}`,
+        taskId: row.taskId,
+        label: leaf?.name ?? row.taskName,
+        nodeKind: "leaf",
+        level,
+        parentId: null,
+        rawParentTaskId: row.parentTaskId ?? null,
+        children: [],
+        rowIdx: i,
+      });
+    } else {
+      rowNodes.push({
+        id: `p:${row.taskId}__${i}`,
+        taskId: row.taskId,
+        label: row.taskName,
+        nodeKind: "parent",
+        level,
+        parentId: null,
+        rawParentTaskId: row.parentTaskId ?? null,
+        children: [],
+        rowIdx: i,
+      });
+    }
+  }
+
+  for (let i = 0; i < rowNodes.length; i++) {
+    const n = rowNodes[i]!;
+    let parentId: string | null = null;
+    if (n.rawParentTaskId) {
+      for (let j = i - 1; j >= 0; j--) {
+        const p = rowNodes[j]!;
+        if (p.nodeKind === "parent" && p.taskId === n.rawParentTaskId) {
+          parentId = p.id;
+          break;
+        }
+      }
+    }
+    if (!parentId && n.level > 1) {
+      for (let j = i - 1; j >= 0; j--) {
+        const p = rowNodes[j]!;
+        if (p.nodeKind === "parent" && p.level < n.level) {
+          parentId = p.id;
+          break;
+        }
+      }
+    }
+    n.parentId = parentId;
+  }
+
+  for (const n of rowNodes) {
+    nodes[n.id] = {
+      id: n.id,
+      taskId: n.taskId,
+      label: n.label,
+      nodeKind: n.nodeKind,
+      level: n.level,
+      parentId: n.parentId,
       children: [],
     };
   }
 
-  // Fallback for older saved states that only persisted leaves (no parent rows):
-  // reconstruct synthetic parent chain from fullPath and connect leaf to deepest parent.
+  for (const n of Object.values(nodes)) {
+    if (n.parentId && nodes[n.parentId]) nodes[n.parentId].children.push(n.id);
+  }
+
+  // Fallback for older states with only leaves or missing parent links.
   for (const leaf of leaves) {
     const leafNode = nodes[leaf.id];
     if (!leafNode) continue;
@@ -93,12 +151,14 @@ export function buildWeightTree(rows: RevaParsedRow[], leaves: ParsedTask[]): We
       prevParentId = pid;
     });
     leafNode.parentId = prevParentId;
+    if (prevParentId && nodes[prevParentId] && !nodes[prevParentId].children.includes(leafNode.id)) {
+      nodes[prevParentId].children.push(leafNode.id);
+    }
   }
 
   const rootIds: string[] = [];
   for (const node of Object.values(nodes)) {
     if (node.parentId && nodes[node.parentId]?.nodeKind === "parent") {
-      nodes[node.parentId].children.push(node.id);
       continue;
     }
     rootIds.push(node.id);

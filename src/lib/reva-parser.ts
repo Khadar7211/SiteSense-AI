@@ -341,6 +341,7 @@ export function parseRevaRecords(
   for (const row of dataRows) {
     syntheticCounter += 1;
     const rowTaskId = taskIdCol ? String(row[taskIdCol] ?? "").trim() : "";
+    if (taskIdCol && !rowTaskId) continue;
     const taskId = rowTaskId || `AUTO-${syntheticCounter}`;
     const pl = parentLeafCol ? String(row[parentLeafCol] ?? "").trim() : "";
     const totalQty = totalCol ? parseNumber(row[totalCol]) : 0;
@@ -374,45 +375,6 @@ export function parseRevaRecords(
       else nodeKind = hasQtyAndUnit ? "leaf" : "parent";
     } else {
       nodeKind = hasQtyAndUnit ? "leaf" : "parent";
-    }
-
-    if (!parentLeafCol && !hasQtyAndUnit && levelCols.length === 0 && !levelCol) {
-      continue;
-    }
-
-    if (!parentLeafCol && nodeKind === "parent" && !taskName.trim()) {
-      continue;
-    }
-    if (parentLeafCol && !taskName.trim() && !rowTaskId) {
-      continue;
-    }
-
-    if (!parentLeafCol && levelCols.length === 0 && !levelCol && !hasQtyAndUnit) {
-      continue;
-    }
-
-    if (!parentLeafCol && !hasQtyAndUnit && !taskName) {
-      continue;
-    }
-
-    if (!parentLeafCol && !hasQtyAndUnit && totalQty <= 0 && !taskName) {
-      continue;
-    }
-
-    if (!parentLeafCol && !hasQtyAndUnit && !taskNameCol && levelCols.length === 0) {
-      continue;
-    }
-
-    if (!parentLeafCol && !hasQtyAndUnit && !levelCol && levelCols.length === 0) {
-      continue;
-    }
-
-    if (!parentLeafCol && !hasQtyAndUnit && !parentIdCol && !taskName) {
-      continue;
-    }
-
-    if (!rowTaskId && taskIdCol) {
-      errors.push(`Row ${syntheticCounter}: Task ID missing, auto-generated.`);
     }
 
     {
