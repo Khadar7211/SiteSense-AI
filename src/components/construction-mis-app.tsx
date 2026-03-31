@@ -21,7 +21,7 @@ import {
 
 import { BottlenecksTable } from "@/components/bottlenecks-table";
 import { ProgressGauge } from "@/components/progress-gauge";
-import { LeafWeightageTable } from "@/components/leaf-weightage-table";
+import { ParentWeightageTable } from "@/components/parent-weightage-table";
 import { ParentLevelDashboard } from "@/components/parent-level-dashboard";
 import { ProjectAnalyticsDashboard } from "@/components/project-analytics-dashboard";
 import { ProjectHierarchyDashboard } from "@/components/project-hierarchy-dashboard";
@@ -41,12 +41,17 @@ import {
   buildTaskMetrics,
   computeBottlenecks,
   overallCompletionPercent,
-  weightageTotal,
 } from "@/lib/calculations";
+import {
+  computeMajorParentBuckets,
+  leafWeightsFromParentInputs,
+  parentWeightsFromDbLeafWeights,
+  totalParentWeightPct,
+} from "@/lib/parent-weight-buckets";
 import { buildRollupTree } from "@/lib/hierarchy-rollup";
 import { parseRevaCsv, parseRevaXlsx } from "@/lib/reva-parser";
 import { cn } from "@/lib/utils";
-import { equalWeightage } from "@/lib/weightage-init";
+import { equalParentWeights } from "@/lib/weightage-init";
 import type { ParsedTask, RevaParseResult } from "@/types/progress";
 
 type Project = { id: string; name: string; created_at?: string };
@@ -65,7 +70,9 @@ export function ConstructionMisApp() {
   const [isNewProject, setIsNewProject] = useState(false);
   const [newTaskIds, setNewTaskIds] = useState<Set<string>>(() => new Set());
 
-  const [weightage, setWeightage] = useState<Record<string, number>>({});
+  const [parentWeightInputs, setParentWeightInputs] = useState<
+    Record<string, number>
+  >({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -153,6 +160,16 @@ export function ConstructionMisApp() {
   const leaves = useMemo(
     () => sessionParse?.leaves ?? [],
     [sessionParse]
+  );
+
+  const majorBuckets = useMemo(
+    () => computeMajorParentBuckets(leaves),
+    [leaves]
+  );
+
+  const weightage = useMemo(
+    () => leafWeightsFromParentInputs(majorBuckets, parentWeightInputs),
+    [majorBuckets, parentWeightInputs]
   );
 
   const recordProgressLog = useCallback(
@@ -244,31 +261,37 @@ export function ConstructionMisApp() {
         const dbw = (jW.weights ?? {}) as Record<string, number>;
 
         const detectedNew = new Set<string>();
-        const w: Record<string, number> = {};
         for (const leaf of parsed.leaves) {
           const v = dbw[leaf.taskId];
-          if (v != null && Number.isFinite(v)) {
-            w[leaf.id] = v;
-          } else {
-            w[leaf.id] = 0;
+          if (v == null || !Number.isFinite(v)) {
             detectedNew.add(leaf.taskId);
           }
         }
 
+        const buckets = computeMajorParentBuckets(parsed.leaves);
+        const parentW =
+          detectedNew.size > 0
+            ? equalParentWeights(buckets.map((b) => b.key))
+            : parentWeightsFromDbLeafWeights(
+                buckets,
+                parsed.leaves,
+                dbw
+              );
+
         setSessionParse(parsed);
+        setParentWeightInputs(parentW);
 
         if (detectedNew.size > 0) {
-        setWeightage(w);
-        setNewTaskIds(detectedNew);
-        setPhase("mapping");
-        void saveProjectState(project.id, parsed.leaves, sourceFilename);
-        return;
+          setNewTaskIds(detectedNew);
+          setPhase("mapping");
+          void saveProjectState(project.id, parsed.leaves, sourceFilename);
+          return;
         }
 
-        setWeightage(w);
         setNewTaskIds(new Set());
         setPhase("dashboard");
-        const metrics = buildTaskMetrics(parsed.leaves, w);
+        const leafW = leafWeightsFromParentInputs(buckets, parentW);
+        const metrics = buildTaskMetrics(parsed.leaves, leafW);
         const overall = overallCompletionPercent(metrics);
         void recordProgressLog(project.id, overall, parsed.leaves.length);
         void saveProjectState(project.id, parsed.leaves, sourceFilename);
@@ -299,11 +322,11 @@ export function ConstructionMisApp() {
     await processParsedFile(parsed, activeProject, file.name);
   };
 
-  const setWeight = (id: string, raw: string) => {
+  const setParentWeight = (key: string, raw: string) => {
     const n = parseFloat(raw);
-    setWeightage((prev) => ({
+    setParentWeightInputs((prev) => ({
       ...prev,
-      [id]: Number.isFinite(n) ? n : 0,
+      [key]: Number.isFinite(n) ? n : 0,
     }));
   };
 
@@ -312,20 +335,35 @@ export function ConstructionMisApp() {
     [leaves, weightage]
   );
   const overall = overallCompletionPercent(metrics);
-  const totalW = weightageTotal(weightage);
-  const weightOk = leaves.length === 0 || Math.abs(totalW - 100) < 0.01;
+  const totalParentPct = totalParentWeightPct(majorBuckets, parentWeightInputs);
+  const weightOk =
+    majorBuckets.length === 0 || Math.abs(totalParentPct - 100) < 0.01;
   const bottlenecks = useMemo(() => computeBottlenecks(metrics), [metrics]);
   const rollupRoot = useMemo(() => {
     if (metrics.length === 0) return null;
     return buildRollupTree(metrics);
   }, [metrics]);
 
+  const highlightedParentKeys = useMemo(() => {
+    if (newTaskIds.size === 0) return new Set<string>();
+    const leafById = new Map(leaves.map((l) => [l.id, l] as const));
+    const out = new Set<string>();
+    for (const b of majorBuckets) {
+      const hasNew = b.leafIds.some((leafId) => {
+        const leaf = leafById.get(leafId);
+        return leaf ? newTaskIds.has(leaf.taskId) : false;
+      });
+      if (hasNew) out.add(b.key);
+    }
+    return out;
+  }, [majorBuckets, leaves, newTaskIds]);
+
   const showNewTasksAlert =
     phase === "mapping" && newTaskIds.size > 0 && !isNewProject;
 
   const saveMappingAndContinue = async () => {
     if (!weightOk) {
-      setSaveError("Target weights must sum to 100%.");
+      setSaveError("Major parent weights must sum to 100%.");
       return;
     }
     if (!sessionParse || sessionParse.leaves.length === 0) return;
@@ -343,8 +381,13 @@ export function ConstructionMisApp() {
         setIsNewProject(false);
       }
 
+      const bucketsSave = computeMajorParentBuckets(sessionParse.leaves);
+      const leafW = leafWeightsFromParentInputs(
+        bucketsSave,
+        parentWeightInputs
+      );
       const weights: Record<string, number> = Object.fromEntries(
-        sessionParse.leaves.map((l) => [l.taskId, weightage[l.id] ?? 0])
+        sessionParse.leaves.map((l) => [l.taskId, leafW[l.id] ?? 0])
       );
 
       const resTs = await fetch("/api/task-settings", {
@@ -360,7 +403,7 @@ export function ConstructionMisApp() {
       setNewTaskIds(new Set());
       setPhase("dashboard");
 
-      const m = buildTaskMetrics(sessionParse.leaves, weightage);
+      const m = buildTaskMetrics(sessionParse.leaves, leafW);
       const tot = overallCompletionPercent(m);
       await recordProgressLog(project.id, tot, sessionParse.leaves.length);
       await saveProjectState(
@@ -380,7 +423,7 @@ export function ConstructionMisApp() {
     setActiveProject(p);
     setPhase("idle");
     setParseErrors([]);
-    setWeightage({});
+    setParentWeightInputs({});
     setNewTaskIds(new Set());
     setIsNewProject(false);
     setSaveError(null);
@@ -412,14 +455,15 @@ export function ConstructionMisApp() {
         errors: [],
       };
       const dbw = (weightJson.weights ?? {}) as Record<string, number>;
-      const w: Record<string, number> = {};
-      for (const leaf of leavesFromDb) {
-        const v = dbw[leaf.taskId];
-        w[leaf.id] = v != null && Number.isFinite(v) ? v : 0;
-      }
+      const bucketsLoad = computeMajorParentBuckets(leavesFromDb);
+      const parentW = parentWeightsFromDbLeafWeights(
+        bucketsLoad,
+        leavesFromDb,
+        dbw
+      );
 
       setSessionParse(parsed);
-      setWeightage(w);
+      setParentWeightInputs(parentW);
       setLatestSourceFilename(state?.source_filename ?? null);
       setPhase("dashboard");
     } catch {
@@ -625,20 +669,23 @@ export function ConstructionMisApp() {
                   <Card>
                     <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-4">
                       <div>
-                        <CardTitle>Target weightage % (Task ID keyed)</CardTitle>
+                        <CardTitle>Target weight % (major parents)</CardTitle>
                         <CardDescription>
-                          Achieved weight = target % × task physical %. Total must
-                          be 100% for all leaves in this file.
+                          Enter weight for each Level 1 / Level 2 parent; the app
+                          splits it equally across leaf tasks under that parent.
+                          Parent row totals must equal 100%.
                         </CardDescription>
                       </div>
                       <Button
                         type="button"
                         variant="outline"
                         onClick={() =>
-                          setWeightage(equalWeightage(leaves))
+                          setParentWeightInputs(
+                            equalParentWeights(majorBuckets.map((b) => b.key))
+                          )
                         }
                       >
-                        Split equally
+                        Split parents equally
                       </Button>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -653,23 +700,23 @@ export function ConstructionMisApp() {
                               : "font-mono text-lg font-semibold text-amber-600"
                           }
                         >
-                          {totalW.toFixed(2)}%
+                          {totalParentPct.toFixed(2)}%
                         </span>
                         {weightOk ? (
                           <CheckCircle2 className="h-5 w-5 text-primary" />
                         ) : (
                           <span className="text-xs text-amber-800">
-                            Must equal 100%
+                            Parent weights must equal 100%
                           </span>
                         )}
                       </div>
                       <div className="max-h-[min(520px,70vh)] overflow-auto pr-1">
-                        <LeafWeightageTable
-                          tasks={leaves}
-                          weightage={weightage}
-                          onWeightChange={setWeight}
-                          highlightedTaskIds={
-                            isNewProject ? undefined : newTaskIds
+                        <ParentWeightageTable
+                          buckets={majorBuckets}
+                          parentWeight={parentWeightInputs}
+                          onParentWeightChange={setParentWeight}
+                          highlightedParentKeys={
+                            isNewProject ? undefined : highlightedParentKeys
                           }
                         />
                       </div>
@@ -735,9 +782,10 @@ export function ConstructionMisApp() {
                     </CardHeader>
                     <CardContent>
                       <ProgressGauge value={overall} />
-                      {!weightOk && leaves.length > 0 && (
+                      {!weightOk && majorBuckets.length > 0 && (
                         <p className="mt-2 text-center text-xs text-amber-800">
-                          Weights should total 100% for a valid MIS total.
+                          Major parent weights should total 100% for a valid MIS
+                          total.
                         </p>
                       )}
                     </CardContent>
