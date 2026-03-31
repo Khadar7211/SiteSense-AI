@@ -76,3 +76,41 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ project: data });
 }
+
+export async function DELETE(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const projectId = searchParams.get("projectId");
+  if (!projectId) {
+    return NextResponse.json({ error: "projectId required" }, { status: 400 });
+  }
+
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) {
+    return NextResponse.json({ error: "Supabase not configured" }, { status: 503 });
+  }
+
+  // Delete child records first, then project.
+  const steps: Array<{ table: string; column: string }> = [
+    { table: "progress_logs", column: "project_id" },
+    { table: "project_latest_state", column: "project_id" },
+    { table: "task_settings", column: "project_id" },
+  ];
+  const issues: string[] = [];
+
+  for (const step of steps) {
+    const { error } = await supabase.from(step.table).delete().eq(step.column, projectId);
+    if (error) issues.push(`${step.table}: ${error.message}`);
+  }
+
+  const { error: projectError } = await supabase
+    .from("projects")
+    .delete()
+    .eq("id", projectId);
+  if (projectError) issues.push(`projects: ${projectError.message}`);
+
+  if (issues.length > 0) {
+    return NextResponse.json({ error: "Delete failed", issues }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}

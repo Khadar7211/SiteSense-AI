@@ -16,6 +16,7 @@ import {
   Loader2,
   Scale,
   Sparkles,
+  Trash2,
   Upload,
 } from "lucide-react";
 
@@ -109,7 +110,8 @@ export function ConstructionMisApp() {
   }, [activeProject?.id]);
 
   useEffect(() => {
-    if (loadingProjects || projects.length === 0 || activeProject) return;
+    // Restore only on true idle start; do not override an uploaded parsing session.
+    if (loadingProjects || projects.length === 0 || activeProject || sessionParse) return;
     let lastId: string | null = null;
     try {
       lastId = window.localStorage.getItem(LAST_PROJECT_KEY);
@@ -119,7 +121,7 @@ export function ConstructionMisApp() {
     if (!lastId) return;
     const matched = projects.find((p) => p.id === lastId);
     if (matched) void selectProject(matched);
-  }, [loadingProjects, projects, activeProject]);
+  }, [loadingProjects, projects, activeProject, sessionParse]);
 
   const loadScurve = useCallback(async (projectId: string) => {
     setLoadingLogs(true);
@@ -477,6 +479,37 @@ export function ConstructionMisApp() {
     }
   };
 
+  const deleteProject = async (p: Project) => {
+    const ok = window.confirm(`Delete project "${p.name}"? This cannot be undone.`);
+    if (!ok) return;
+    try {
+      const res = await fetch(
+        `/api/projects?projectId=${encodeURIComponent(p.id)}`,
+        { method: "DELETE" }
+      );
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "Could not delete project");
+
+      if (activeProject?.id === p.id) {
+        setActiveProject(null);
+        setSessionParse(null);
+        setPhase("idle");
+        setLeafWeightage({});
+        setParseErrors([]);
+        setSaveError(null);
+        setLatestSourceFilename(null);
+        try {
+          window.localStorage.removeItem(LAST_PROJECT_KEY);
+        } catch {
+          /* ignore */
+        }
+      }
+      await refreshProjects();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Could not delete project");
+    }
+  };
+
   const displayProjectName =
     sessionParse?.projectName?.trim() ||
     activeProject?.name ||
@@ -537,19 +570,44 @@ export function ConstructionMisApp() {
               <ul className="max-h-[260px] space-y-1 overflow-auto rounded-xl border border-blue-200 bg-white/85 p-1.5 backdrop-blur lg:max-h-[70vh]">
                 {projects.map((p) => (
                   <li key={p.id}>
-                    <button
-                      type="button"
-                      onClick={() => selectProject(p)}
-                      title={p.name}
+                    <div
                       className={cn(
-                        "w-full rounded-lg px-3 py-2 text-left text-sm transition-all duration-200 active:scale-[0.98]",
+                        "flex items-center gap-1 rounded-lg transition-all duration-200",
                         activeProject?.id === p.id
-                          ? "bg-blue-600 font-medium text-white shadow-md shadow-blue-300/50"
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-300/50"
                           : "bg-white/80 text-slate-700 hover:bg-blue-50 hover:shadow-sm"
                       )}
                     >
-                      <span className="line-clamp-1">{p.name}</span>
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => selectProject(p)}
+                        title={p.name}
+                        className="min-w-0 flex-1 px-3 py-2 text-left text-sm active:scale-[0.98]"
+                      >
+                        <span className="line-clamp-1">{p.name}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void deleteProject(p)}
+                        className={cn(
+                          "mr-1 rounded p-1.5",
+                          activeProject?.id === p.id
+                            ? "hover:bg-blue-500"
+                            : "hover:bg-red-100"
+                        )}
+                        aria-label={`Delete ${p.name}`}
+                        title={`Delete ${p.name}`}
+                      >
+                        <Trash2
+                          className={cn(
+                            "h-4 w-4",
+                            activeProject?.id === p.id
+                              ? "text-white"
+                              : "text-red-600"
+                          )}
+                        />
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
