@@ -460,6 +460,20 @@ export function parseRevaRecords(
     endDates.push(endDateCol ? toIsoDate(row[endDateCol]) : null);
   }
 
+  // Fallback: if Parent/Leaf typing was not reliably detected and we have levels,
+  // infer parents by depth so non-deepest levels become parent rows.
+  const numericDepths = depths.filter((d): d is number => d != null && d > 0);
+  if (numericDepths.length > 0) {
+    const maxDepth = Math.max(...numericDepths);
+    const allLeafTyped = bodies.every((b) => b.nodeKind === "leaf");
+    if (allLeafTyped && maxDepth > 1) {
+      bodies.forEach((b, i) => {
+        const d = depths[i] ?? null;
+        if (d != null && d < maxDepth) b.nodeKind = "parent";
+      });
+    }
+  }
+
   let withParents: RevaParsedRow[];
   if (parentIdCol) {
     withParents = bodies.map((b, i) => ({
