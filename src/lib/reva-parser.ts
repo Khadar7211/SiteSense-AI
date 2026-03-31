@@ -63,7 +63,8 @@ function detectHeaderRowIndex(matrix: string[][]): number {
   const max = Math.min(HEADER_SCAN_LIMIT, matrix.length);
   let bestIdx = 0;
   let bestScore = -1;
-  const keyRe = /(task\s*id|parent\s*\/?\s*leaf|task\s*names?|level\s*1|uom|unit)/i;
+  const keyRe =
+    /(task\s*id|parent\s*\/?\s*leaf|task\s*names?|level(\s*\d+)?|uom|unit)/i;
   for (let i = 0; i < max; i++) {
     const row = matrix[i] ?? [];
     const score = row.reduce((acc, c) => {

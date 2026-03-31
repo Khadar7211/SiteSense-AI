@@ -188,7 +188,7 @@ export function distributeToParentDescendants(
   nodeId: string,
   total: number
 ): Record<string, number> {
-  const targetLeaves = immediateLeafChildIds(tree, nodeId);
+  const targetLeaves = descendantLeafIds(tree, nodeId);
   if (targetLeaves.length === 0) return leafWeights;
   const split = splitEqually(total, targetLeaves);
   return { ...leafWeights, ...split };
