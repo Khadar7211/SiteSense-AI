@@ -69,9 +69,10 @@ export function HierarchicalWeightageTree({
             type="number"
             step="0.01"
             min={0}
-            className="h-8 text-right"
+            className="h-8 text-right bg-muted/40"
             value={v}
             onChange={(e) => onLeafChange(node.id, e.target.value)}
+            readOnly
           />
         </div>
       );

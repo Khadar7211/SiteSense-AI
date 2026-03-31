@@ -63,6 +63,38 @@ export function buildWeightTree(rows: RevaParsedRow[], leaves: ParsedTask[]): We
     };
   }
 
+  // Fallback for older saved states that only persisted leaves (no parent rows):
+  // reconstruct synthetic parent chain from fullPath and connect leaf to deepest parent.
+  for (const leaf of leaves) {
+    const leafNode = nodes[leaf.id];
+    if (!leafNode) continue;
+    if (leafNode.parentId && nodes[leafNode.parentId]) continue;
+
+    const segs = leaf.fullPath
+      .split(/\s*>\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const parentSegs = segs.length > 1 ? segs.slice(0, -1) : [];
+    let prevParentId: string | null = null;
+    parentSegs.forEach((seg, i) => {
+      const key = parentSegs.slice(0, i + 1).join(" > ");
+      const pid = `p:path:${key}`;
+      if (!nodes[pid]) {
+        nodes[pid] = {
+          id: pid,
+          taskId: pid,
+          label: seg,
+          nodeKind: "parent",
+          level: i + 1,
+          parentId: prevParentId,
+          children: [],
+        };
+      }
+      prevParentId = pid;
+    });
+    leafNode.parentId = prevParentId;
+  }
+
   const rootIds: string[] = [];
   for (const node of Object.values(nodes)) {
     if (node.parentId && nodes[node.parentId]?.nodeKind === "parent") {
