@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 type Props = {
   tree: WeightTree;
   leafWeights: Record<string, number>;
+  onLeafChange: (leafNodeId: string, raw: string) => void;
   onParentChange: (parentNodeId: string, raw: string) => void;
   onDistributeEqual: (parentNodeId: string) => void;
   highlightedTaskIds?: Set<string>;
@@ -23,6 +24,7 @@ type Props = {
 export function HierarchicalWeightageTree({
   tree,
   leafWeights,
+  onLeafChange,
   onParentChange,
   onDistributeEqual,
   highlightedTaskIds,
@@ -60,13 +62,17 @@ export function HierarchicalWeightageTree({
         >
           <div className="min-w-0">
             <p className="truncate text-sm">{node.label}</p>
-            <p className="text-xs text-muted-foreground">
-              Leaf (auto-distributed)
-            </p>
+            <p className="text-xs text-muted-foreground">Leaf</p>
           </div>
-          <p className="text-right text-sm font-medium tabular-nums">
-            {v.toFixed(2)}%
-          </p>
+          <Input
+            id={toDomId(node.id, "wt")}
+            type="number"
+            step="0.01"
+            min={0}
+            className="h-8 text-right"
+            value={v}
+            onChange={(e) => onLeafChange(node.id, e.target.value)}
+          />
         </div>
       );
     }
@@ -79,7 +85,10 @@ export function HierarchicalWeightageTree({
     return (
       <div key={id} className="space-y-2">
         <div
-          className="grid grid-cols-[1fr,140px,120px] items-center gap-3 rounded-md border bg-muted/20 px-2 py-2"
+          className={cn(
+            "grid grid-cols-[1fr,140px,120px] items-center gap-3 rounded-md border px-2 py-2",
+            node.level <= 1 ? "bg-blue-50/80" : "bg-slate-50/80"
+          )}
           style={{ marginLeft: depth * 18 }}
         >
           <button

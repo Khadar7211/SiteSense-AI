@@ -323,6 +323,14 @@ export function ConstructionMisApp() {
     );
   };
 
+  const setLeafWeight = (leafNodeId: string, raw: string) => {
+    const n = parseFloat(raw);
+    setLeafWeightage((prev) => ({
+      ...prev,
+      [leafNodeId]: Number.isFinite(n) ? n : 0,
+    }));
+  };
+
   const distributeEqualForParent = (nodeId: string) => {
     const current = parentWeight(weightTree, leafWeightage, nodeId);
     setLeafWeightage((prev) =>
@@ -684,6 +692,7 @@ export function ConstructionMisApp() {
                         <HierarchicalWeightageTree
                           tree={weightTree}
                           leafWeights={leafWeightage}
+                          onLeafChange={setLeafWeight}
                           onParentChange={setParentWeight}
                           onDistributeEqual={distributeEqualForParent}
                           highlightedTaskIds={

@@ -116,13 +116,23 @@ export function immediateChildrenSum(
   }, 0);
 }
 
+export function immediateLeafChildIds(tree: WeightTree, nodeId: string): string[] {
+  const node = tree.nodes[nodeId];
+  if (!node || node.nodeKind !== "parent") return [];
+  return node.children
+    .map((id) => tree.nodes[id])
+    .filter((n): n is WeightTreeNode => Boolean(n))
+    .filter((n) => n.nodeKind === "leaf")
+    .map((n) => n.id);
+}
+
 export function distributeToParentDescendants(
   tree: WeightTree,
   leafWeights: Record<string, number>,
   nodeId: string,
   total: number
 ): Record<string, number> {
-  const targetLeaves = descendantLeafIds(tree, nodeId);
+  const targetLeaves = immediateLeafChildIds(tree, nodeId);
   if (targetLeaves.length === 0) return leafWeights;
   const split = splitEqually(total, targetLeaves);
   return { ...leafWeights, ...split };
