@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 type Props = {
   tree: WeightTree;
   leafWeights: Record<string, number>;
-  onLeafChange: (leafNodeId: string, raw: string) => void;
   onParentChange: (parentNodeId: string, raw: string) => void;
   onDistributeEqual: (parentNodeId: string) => void;
   highlightedTaskIds?: Set<string>;
@@ -24,7 +23,6 @@ type Props = {
 export function HierarchicalWeightageTree({
   tree,
   leafWeights,
-  onLeafChange,
   onParentChange,
   onDistributeEqual,
   highlightedTaskIds,
@@ -62,17 +60,13 @@ export function HierarchicalWeightageTree({
         >
           <div className="min-w-0">
             <p className="truncate text-sm">{node.label}</p>
-            <p className="text-xs text-muted-foreground">Leaf</p>
+            <p className="text-xs text-muted-foreground">
+              Leaf (auto-distributed)
+            </p>
           </div>
-          <Input
-            id={toDomId(node.id, "wt")}
-            type="number"
-            step="0.01"
-            min={0}
-            className="h-8 text-right"
-            value={v}
-            onChange={(e) => onLeafChange(node.id, e.target.value)}
-          />
+          <p className="text-right text-sm font-medium tabular-nums">
+            {v.toFixed(2)}%
+          </p>
         </div>
       );
     }
