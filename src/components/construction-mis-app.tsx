@@ -311,7 +311,7 @@ export function ConstructionMisApp() {
     await processParsedFile(parsed, file.name);
   };
 
-  const setParentWeight = (nodeId: string, raw: string) => {
+  const handleParentWeightChange = (nodeId: string, raw: string) => {
     const n = parseFloat(raw);
     setLeafWeightage((prev) =>
       distributeToParentDescendants(
@@ -323,7 +323,7 @@ export function ConstructionMisApp() {
     );
   };
 
-  const setLeafWeight = (leafNodeId: string, raw: string) => {
+  const handleLeafWeightChange = (leafNodeId: string, raw: string) => {
     const n = parseFloat(raw);
     setLeafWeightage((prev) => ({
       ...prev,
@@ -692,8 +692,8 @@ export function ConstructionMisApp() {
                         <HierarchicalWeightageTree
                           tree={weightTree}
                           leafWeights={leafWeightage}
-                          onLeafChange={setLeafWeight}
-                          onParentChange={setParentWeight}
+                          onLeafChange={handleLeafWeightChange}
+                          onParentChange={handleParentWeightChange}
                           onDistributeEqual={distributeEqualForParent}
                           highlightedTaskIds={
                             isNewProject ? undefined : newTaskIds
